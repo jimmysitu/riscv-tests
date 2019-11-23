@@ -13,6 +13,12 @@
 RVTEST_RV64M
 RVTEST_CODE_BEGIN
 
+# Set up first level intermediate page table
+  la t0, page_table_2
+  srl t0, t0, RISCV_PGSHIFT - PTE_PPN_SHIFT
+  ori t0, t0, PTE_V
+  sd t0, page_table_1, t1
+
   # Turn on VM
   li a0, (SATP_MODE & ~(SATP_MODE<<1)) * SATP_MODE_SV39
   la a1, page_table_1
@@ -24,7 +30,7 @@ RVTEST_CODE_BEGIN
   # Set up MPRV with MPP=S, so loads and stores use S-mode
   li a1, ((MSTATUS_MPP & ~(MSTATUS_MPP<<1)) * PRV_S) | MSTATUS_MPRV
   csrs mstatus, a1
-
+  
   # Try a faulting store to make sure dirty bit is not set
   li TESTNUM, 2
   li t2, 1
@@ -51,7 +57,7 @@ RVTEST_CODE_BEGIN
   csrc mstatus, t0
 
   # Make sure D bit is set
-  lw t0, page_table_1
+  lw t0, page_table_2
   li a0, PTE_A | PTE_D
   and t0, t0, a0
   bne t0, a0, die
@@ -62,11 +68,11 @@ RVTEST_CODE_BEGIN
 
   # Make sure that superpage entries trap when PPN LSBs are set.
   li TESTNUM, 4
-  lw a0, page_table_1 - DRAM_BASE
+  lw a0, page_table_2 - DRAM_BASE
   or a0, a0, 1 << PTE_PPN_SHIFT
-  sw a0, page_table_1 - DRAM_BASE, t0
+  sw a0, page_table_2 - DRAM_BASE, t0
   sfence.vma
-  sw a0, page_table_1 - DRAM_BASE, t0
+  sw a0, page_table_2 - DRAM_BASE, t0
   j die
   
   RVTEST_PASS
@@ -83,7 +89,7 @@ mtvec_handler:
   li t1, 2
   bne TESTNUM, t1, 1f
   # Make sure D bit is clear
-  lw t0, page_table_1
+  lw t0, page_table_2
   and t1, t0, PTE_D
   bnez t1, die
 skip:
@@ -97,12 +103,12 @@ skip:
   bne TESTNUM, t1, 1f
   # The implementation doesn't appear to set D bits in HW.
   # Make sure the D bit really is clear.
-  lw t0, page_table_1
+  lw t0, page_table_2
   and t1, t0, PTE_D
   bnez t1, die
   # Set the D bit.
   or t0, t0, PTE_D
-  sw t0, page_table_1, t1
+  sw t0, page_table_2, t1
   sfence.vma
   mret
 
@@ -123,7 +129,9 @@ RVTEST_DATA_BEGIN
   TEST_DATA
 
 .align 12
-page_table_1: .dword (DRAM_BASE/RISCV_PGSIZE << PTE_PPN_SHIFT) | PTE_V | PTE_U | PTE_R | PTE_W | PTE_X | PTE_A
+page_table_1: .dword 0
+.align 12
+page_table_2: .dword (DRAM_BASE/RISCV_PGSIZE << PTE_PPN_SHIFT) | PTE_V | PTE_U | PTE_R | PTE_W | PTE_X | PTE_A
 dummy: .dword 0
 
 RVTEST_DATA_END
